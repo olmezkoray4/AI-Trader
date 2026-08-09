@@ -16,12 +16,15 @@ def run_backtest(
     commission_percent=0.04,
     slippage_percent=0.02,
     charge_exit_costs=True,
+    start_index=200,
+    end_index=None,
 ):
     """Run a one-position-at-a-time OHLC backtest.
 
-    The signal is generated at the close of bar i and the entry is executed at
-    the next bar's open. Costs are charged on both entry and exit by default.
-    Commission/slippage values are assumptions for testing, not exchange fees.
+    A signal is generated at the close of bar i and entry occurs at the next
+    bar open. Costs are charged on both entry and exit by default. start_index
+    and end_index make train/validation tests possible on the same fixed data.
+    end_index is exclusive.
     """
     balance = float(initial_balance)
     peak_balance = float(initial_balance)
@@ -49,11 +52,11 @@ def run_backtest(
     short_profit = 0.0
     short_loss = 0.0
 
-    # EMA200 and other long lookbacks need warm-up history.
-    i = 200
+    data_end = len(df) if end_index is None else min(int(end_index), len(df))
+    i = max(200, int(start_index))
 
-    while i < len(df) - 2 and balance > 0:
-        current_df = df.iloc[: i + 1].copy()
+    while i < data_end - 1 and balance > 0:
+        current_df = df.iloc[: i + 1]
         signal_result = signal_function(current_df)
 
         decision = signal_result.get("decision", "BEKLE")
@@ -64,9 +67,8 @@ def run_backtest(
             i += 1
             continue
 
-        # Signal is known only after bar i closes. Enter at next bar open.
         entry_index = i + 1
-        if entry_index >= len(df):
+        if entry_index >= data_end:
             break
 
         entry = float(df["Open"].iloc[entry_index])
@@ -118,7 +120,7 @@ def run_backtest(
 
         last_bar = min(
             entry_index + max_hold_bars - 1,
-            len(df) - 1,
+            data_end - 1,
         )
 
         for j in range(entry_index, last_bar + 1):
@@ -129,7 +131,6 @@ def run_backtest(
                 stop_hit = low <= stop_loss
                 target_hit = high >= take_profit
 
-                # OHLC cannot tell which was hit first. Use conservative stop.
                 if stop_hit and target_hit:
                     exit_price = stop_loss
                     exit_reason = "STOP LOSS"
@@ -259,7 +260,6 @@ def run_backtest(
             }
         )
 
-        # One open position at a time.
         i = exit_index + 1
 
     total_trades = len(trades)
