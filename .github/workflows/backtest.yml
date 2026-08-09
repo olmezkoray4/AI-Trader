@@ -14,7 +14,7 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -34,14 +34,20 @@ jobs:
       - name: Syntax check
         run: python -m compileall app
 
-      - name: Run backtest
+      - name: Run V1 backtest
         run: |
-          python -m app.test_backtest | tee backtest_output.txt
+          python -m app.test_backtest | tee backtest_v1_output.txt
 
-      - name: Upload backtest output
+      - name: Run V2 backtest
+        run: |
+          python -m app.test_backtest_v2 | tee backtest_v2_output.txt
+
+      - name: Upload backtest outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backtest-output
-          path: backtest_output.txt
+          name: backtest-outputs
+          path: |
+            backtest_v1_output.txt
+            backtest_v2_output.txt
           if-no-files-found: warn
