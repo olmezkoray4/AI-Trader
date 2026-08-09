@@ -31,6 +31,9 @@ df["RSI"] = calculate_rsi(df, 14)
 df["MACD"], df["MACD_SIGNAL"], df["MACD_HIST"] = calculate_macd(df)
 df["ATR"] = calculate_atr(df, 14)
 
+# Backtest hızlandırması: hacim ortalamasını bir kez hesapla.
+df["VOLUME_MA"] = df["Volume"].rolling(window=20).mean()
+
 
 # =====================================================
 # STRATEJİ
@@ -39,7 +42,11 @@ df["ATR"] = calculate_atr(df, 14)
 def strategy(current_df):
     # Backtest verisindeki son mum kapanmış kabul edilir.
     trend = detect_trend(current_df, candle_index=-1)
-    volume_result = analyze_volume(current_df, candle_index=-1)
+    volume_result = analyze_volume(
+        current_df,
+        period=20,
+        candle_index=-1,
+    )
 
     return generate_signal(
         current_df,
