@@ -4,11 +4,23 @@ def generate_signal_v2(
     volume_result,
     candle_index=-1,
     min_score=70,
+    allow_long=True,
+    allow_short=True,
+    atr_min_percent=0.05,
+    atr_max_percent=0.90,
+    ema_spread_min_percent=0.03,
+    volume_min_ratio=0.80,
+    volume_max_ratio=1.80,
+    long_rsi_min=48,
+    long_rsi_max=68,
+    short_rsi_min=32,
+    short_rsi_max=52,
 ):
     """Regime-aware trend-following signal engine.
 
-    V2 deliberately avoids trading RANGE/TRANSITION regimes and requires
-    agreement between trend strength, EMA slope, RSI, MACD and volume.
+    Parameters are explicit so the optimizer can test configurations without
+    rewriting strategy code. The function only uses data available up to the
+    selected candle.
     """
     reasons = []
     score = 0
@@ -22,7 +34,6 @@ def generate_signal_v2(
 
     last = df.iloc[candle_index]
 
-    # Use earlier closed bars only.
     absolute_index = len(df) + candle_index if candle_index < 0 else candle_index
     previous_index = max(0, absolute_index - 1)
     slope_index = max(0, absolute_index - 3)
@@ -45,7 +56,7 @@ def generate_signal_v2(
     ema_spread_percent = float(regime_result["ema_spread_percent"])
     volume_ratio = float(volume_result["ratio"])
 
-    if close == 0:
+    if close <= 0:
         return {
             "score": 0,
             "decision": "BEKLE",
@@ -64,24 +75,21 @@ def generate_signal_v2(
             "reasons": [f"Rejim uygun değil: {regime}"],
         }
 
-    # Extremely quiet or abnormally volatile 5m periods are skipped.
-    if atr_percent < 0.05 or atr_percent > 0.90:
+    if atr_percent < atr_min_percent or atr_percent > atr_max_percent:
         return {
             "score": 0,
             "decision": "BEKLE",
             "reasons": [f"ATR filtresi: {atr_percent:.3f}%"],
         }
 
-    # EMA20/EMA50 are too close: trend structure is weak.
-    if ema_spread_percent < 0.03:
+    if ema_spread_percent < ema_spread_min_percent:
         return {
             "score": 0,
             "decision": "BEKLE",
             "reasons": ["EMA yayılımı çok düşük"],
         }
 
-    # Avoid entering directly into exceptional volume spikes.
-    if volume_ratio > 1.80:
+    if volume_ratio > volume_max_ratio:
         return {
             "score": 0,
             "decision": "BEKLE",
@@ -92,6 +100,13 @@ def generate_signal_v2(
     # TREND UP -> LONG
     # -----------------------------------------------------
     if regime == "TREND_UP":
+        if not allow_long:
+            return {
+                "score": 0,
+                "decision": "BEKLE",
+                "reasons": ["LONG devre dışı"],
+            }
+
         reasons.append("Rejim: güçlü yükseliş")
 
         if adx >= 25:
@@ -106,7 +121,7 @@ def generate_signal_v2(
             score += 15
             reasons.append("EMA20 eğimi yukarı")
 
-        if 48 <= rsi <= 68:
+        if long_rsi_min <= rsi <= long_rsi_max:
             score += 15
             reasons.append("RSI trend bölgesinde")
 
@@ -118,7 +133,7 @@ def generate_signal_v2(
                 score += 10
                 reasons.append("MACD momentumu güçleniyor")
 
-        if 0.80 <= volume_ratio <= 1.80:
+        if volume_min_ratio <= volume_ratio <= volume_max_ratio:
             score += 10
             reasons.append("Hacim yeterli")
 
@@ -128,6 +143,13 @@ def generate_signal_v2(
     # TREND DOWN -> SHORT
     # -----------------------------------------------------
     else:
+        if not allow_short:
+            return {
+                "score": 0,
+                "decision": "BEKLE",
+                "reasons": ["SHORT devre dışı"],
+            }
+
         reasons.append("Rejim: güçlü düşüş")
 
         if adx >= 25:
@@ -142,8 +164,7 @@ def generate_signal_v2(
             score += 15
             reasons.append("EMA20 eğimi aşağı")
 
-        # Do not chase heavily oversold candles.
-        if 32 <= rsi <= 52:
+        if short_rsi_min <= rsi <= short_rsi_max:
             score += 15
             reasons.append("RSI düşüş trend bölgesinde")
 
@@ -155,7 +176,7 @@ def generate_signal_v2(
                 score += 10
                 reasons.append("MACD düşüş momentumu güçleniyor")
 
-        if 0.80 <= volume_ratio <= 1.80:
+        if volume_min_ratio <= volume_ratio <= volume_max_ratio:
             score += 10
             reasons.append("Hacim yeterli")
 
